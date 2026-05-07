@@ -139,6 +139,17 @@ namespace NeeView
                         await MovePageAsync(isNext: true, stream, token);
                         break;
 
+                    case "/command/page-mode":
+                        if (TryGetQueryValue(GetRequestTarget(requestLine), "action", out var pageModeAction))
+                        {
+                            await SetPageModeAsync(pageModeAction, stream, token);
+                        }
+                        else
+                        {
+                            await GetPageModeAsync(stream, token);
+                        }
+                        break;
+
                     case "/bookshelf":
                         await WriteBookshelfAsync(stream, token);
                         break;
@@ -404,6 +415,53 @@ namespace NeeView
             }
         }
 
+        private static async Task GetPageModeAsync(Stream stream, CancellationToken token)
+        {
+            try
+            {
+                var mode = AppDispatcher.Invoke(() => BookSettings.Current.PageMode);
+                var json = JsonSerializer.Serialize(new PageModeResult(true, mode.ToString()));
+                await WriteResponseAsync(stream, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), token, "no-store");
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"WebImageHostService: Cannot read page mode: {ex.Message}");
+                await WriteResponseAsync(stream, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("""{"Ok":false}"""), token, "no-store", "409 Conflict");
+            }
+        }
+
+        private static async Task SetPageModeAsync(string action, Stream stream, CancellationToken token)
+        {
+            try
+            {
+                var mode = await AppDispatcher.InvokeAsync(() =>
+                {
+                    var settings = BookSettings.Current;
+                    switch (action)
+                    {
+                        case "toggle":
+                            settings.TogglePageMode(+1, true);
+                            break;
+                        case "one":
+                            settings.SetPageMode(PageMode.SinglePage);
+                            break;
+                        case "two":
+                            settings.SetPageMode(PageMode.WidePage);
+                            break;
+                    }
+                    return settings.PageMode;
+                });
+
+                var json = JsonSerializer.Serialize(new PageModeResult(true, mode.ToString()));
+                await WriteResponseAsync(stream, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(json), token, "no-store");
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"WebImageHostService: Cannot set page mode: {ex.Message}");
+                await WriteResponseAsync(stream, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("""{"Ok":false}"""), token, "no-store", "409 Conflict");
+            }
+        }
+
         private static async Task MovePageAsync(bool isNext, Stream stream, CancellationToken token)
         {
             try
@@ -526,13 +584,18 @@ namespace NeeView
                   <style>
                     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #111; color: #eee; font-family: system-ui, sans-serif; }
                     body { display: grid; }
-                    img { width: 100%; height: 100%; min-width: 0; min-height: 0; max-width: 100vw; max-height: 100%; object-fit: contain; display: block; touch-action: none; user-select: none; }
+                    img { width: 100%; height: 100%; min-width: 0; min-height: 0; max-width: 100vw; max-height: 100%; object-fit: contain; display: block; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
                     #backdrop { position: fixed; inset: 0; background: #0007; opacity: 0; pointer-events: none; transition: opacity 160ms ease-out; }
                     #backdrop.open { opacity: 1; pointer-events: auto; }
                     #sheet { position: fixed; inset: auto 0 0 0; max-height: 80vh; background: #181818; border-top: 1px solid #333; transform: translateY(100%); transition: transform 160ms ease-out; display: grid; grid-template-rows: auto minmax(0, 1fr); box-shadow: 0 -8px 24px #0009; }
                     #sheet.open { transform: translateY(0); }
                     #sheetHeader { padding: 8px 12px; border-bottom: 1px solid #303030; color: #ccc; font-size: 12px; white-space: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; user-select: none; -webkit-user-select: none; }
-                    #fullscreenButton { position: fixed; top: 10px; right: 10px; width: 34px; height: 34px; border: 1px solid #555; border-radius: 4px; background: #111b; color: #eee; font-size: 20px; line-height: 30px; display: grid; place-items: center; z-index: 2; }
+                    #overlayBackdrop { position: fixed; inset: 0; background: #0007; opacity: 0; pointer-events: none; transition: opacity 160ms ease-out; z-index: 3; }
+                    #overlayBackdrop.open { opacity: 1; pointer-events: auto; }
+                    #overlayMenu { position: fixed; left: 50%; top: 50%; min-width: 220px; padding: 6px; background: #181818; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px #0009; display: grid; gap: 2px; opacity: 0; pointer-events: none; transform: translate(-50%, -50%) scale(0.92); transition: opacity 160ms ease-out, transform 160ms ease-out; z-index: 4; }
+                    #overlayMenu.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+                    #overlayMenu button { display: block; width: 100%; padding: 12px 16px; background: transparent; color: #eee; border: 0; border-radius: 4px; font-size: 16px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+                    #overlayMenu button:hover, #overlayMenu button:focus { background: #2c2c2c; outline: none; }
                     #bookshelfItems { overflow: auto; -webkit-overflow-scrolling: touch; }
                     .bookshelfItem { min-height: 60px; padding: 8px 14px; border-bottom: 1px solid #282828; font-size: 16px; display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
                     .bookshelfItem.current { background: #263247; }
@@ -545,25 +608,35 @@ namespace NeeView
                 </head>
                 <body>
                   <img id="image" alt="Current NeeView page">
-                  <button id="fullscreenButton" type="button" aria-label="Fullscreen">&#9974;</button>
                   <div id="backdrop"></div>
                   <section id="sheet" aria-hidden="true">
                     <div id="sheetHeader">Bookshelf</div>
                     <div id="bookshelfItems"></div>
                   </section>
+                  <div id="overlayBackdrop"></div>
+                  <nav id="overlayMenu" role="menu" aria-hidden="true">
+                    <button id="overlayPageMode" type="button" role="menuitem">ページモード切替</button>
+                    <button id="overlayBookshelf" type="button" role="menuitem">ブックシェルフを開く</button>
+                    <button id="overlayFullscreen" type="button" role="menuitem">フルスクリーン切替</button>
+                  </nav>
                   <script>
                     const image = document.getElementById('image');
-                    const fullscreenButton = document.getElementById('fullscreenButton');
                     const backdrop = document.getElementById('backdrop');
                     const sheet = document.getElementById('sheet');
                     const sheetHeader = document.getElementById('sheetHeader');
                     const bookshelfItems = document.getElementById('bookshelfItems');
+                    const overlayBackdrop = document.getElementById('overlayBackdrop');
+                    const overlayMenu = document.getElementById('overlayMenu');
+                    const overlayPageMode = document.getElementById('overlayPageMode');
+                    const overlayBookshelf = document.getElementById('overlayBookshelf');
+                    const overlayFullscreen = document.getElementById('overlayFullscreen');
                     let touchStartX = 0;
                     let touchStartY = 0;
                     let touchStartTime = 0;
                     let sheetTouchStartX = 0;
                     let sheetTouchStartY = 0;
                     let longPressTimer = 0;
+                    let imageLongPressTimer = 0;
                     let suppressNextClick = false;
                     const thumbnailObserver = new IntersectionObserver(entries => {
                       for (const entry of entries) {
@@ -687,14 +760,56 @@ namespace NeeView
                       sheet.classList.remove('open');
                       sheet.setAttribute('aria-hidden', 'true');
                     }
+                    function formatPageMode(mode) {
+                      if (mode === 'SinglePage') return '2 ページ表示にする';
+                      if (mode === 'WidePage') return '1 ページ表示にする';
+                      return 'ページモード切替';
+                    }
+                    async function openOverlay() {
+                      try {
+                        const response = await fetch('/command/page-mode?t=' + Date.now(), { cache: 'no-store' });
+                        const result = await response.json();
+                        overlayPageMode.textContent = formatPageMode(result.Mode);
+                      } catch {
+                        overlayPageMode.textContent = 'ページモード切替';
+                      }
+                      overlayBackdrop.classList.add('open');
+                      overlayMenu.classList.add('open');
+                      overlayMenu.setAttribute('aria-hidden', 'false');
+                    }
+                    function closeOverlay() {
+                      overlayBackdrop.classList.remove('open');
+                      overlayMenu.classList.remove('open');
+                      overlayMenu.setAttribute('aria-hidden', 'true');
+                    }
+                    async function moveBookshelfNav(action) {
+                      await fetch('/bookshelf/nav?action=' + action, { method: 'POST', cache: 'no-store' });
+                      setTimeout(refresh, 250);
+                    }
                     image.addEventListener('touchstart', event => {
                       if (event.changedTouches.length !== 1) return;
                       const touch = event.changedTouches[0];
                       touchStartX = touch.clientX;
                       touchStartY = touch.clientY;
                       touchStartTime = Date.now();
+                      window.clearTimeout(imageLongPressTimer);
+                      imageLongPressTimer = window.setTimeout(() => {
+                        suppressNextClick = true;
+                        openOverlay();
+                      }, 800);
+                    }, { passive: true });
+                    image.addEventListener('touchmove', event => {
+                      if (event.changedTouches.length !== 1) return;
+                      const touch = event.changedTouches[0];
+                      if (Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY) >= 12) {
+                        window.clearTimeout(imageLongPressTimer);
+                      }
+                    }, { passive: true });
+                    image.addEventListener('touchcancel', () => {
+                      window.clearTimeout(imageLongPressTimer);
                     }, { passive: true });
                     image.addEventListener('touchend', event => {
+                      window.clearTimeout(imageLongPressTimer);
                       if (event.changedTouches.length !== 1) return;
                       const touch = event.changedTouches[0];
                       const dx = touch.clientX - touchStartX;
@@ -702,6 +817,7 @@ namespace NeeView
                       const elapsed = Date.now() - touchStartTime;
                       const distance = Math.hypot(dx, dy);
                       if (distance < 12 && elapsed < 500) {
+                        suppressNextClick = true;
                         if (touch.clientX < window.innerWidth * 0.7) {
                           move('/command/next');
                         } else {
@@ -709,9 +825,7 @@ namespace NeeView
                         }
                         return;
                       }
-                      if (distance >= 50 && dy > 0 && Math.abs(dy) > Math.abs(dx) * 1.3) {
-                        refresh();
-                      } else if (distance >= 50 && dy < 0 && Math.abs(dy) > Math.abs(dx) * 1.3) {
+                      if (distance >= 50 && dy < 0 && Math.abs(dy) > Math.abs(dx) * 1.3) {
                         openBookshelf();
                       }
                     }, { passive: true });
@@ -733,7 +847,70 @@ namespace NeeView
                         moveBookshelf('up');
                       }
                     }, { passive: true });
-                    fullscreenButton.addEventListener('click', toggleFullscreen);
+                    image.addEventListener('contextmenu', event => {
+                      event.preventDefault();
+                      openOverlay();
+                    });
+                    image.addEventListener('click', event => {
+                      if (suppressNextClick) {
+                        suppressNextClick = false;
+                        return;
+                      }
+                      if (event.clientX < window.innerWidth * 0.7) {
+                        move('/command/next');
+                      } else {
+                        move('/command/prev');
+                      }
+                    });
+                    overlayBackdrop.addEventListener('click', closeOverlay);
+                    overlayBackdrop.addEventListener('contextmenu', event => event.preventDefault());
+                    overlayMenu.addEventListener('contextmenu', event => event.preventDefault());
+                    overlayPageMode.addEventListener('click', async () => {
+                      const response = await fetch('/command/page-mode?action=toggle', { method: 'POST', cache: 'no-store' });
+                      const result = await response.json();
+                      overlayPageMode.textContent = formatPageMode(result.Mode);
+                      closeOverlay();
+                      setTimeout(refresh, 250);
+                    });
+                    overlayBookshelf.addEventListener('click', () => {
+                      closeOverlay();
+                      openBookshelf();
+                    });
+                    overlayFullscreen.addEventListener('click', async () => {
+                      closeOverlay();
+                      await toggleFullscreen();
+                    });
+                    document.addEventListener('keydown', event => {
+                      const target = event.target;
+                      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+                      switch (event.key) {
+                        case 'ArrowUp':
+                          event.preventDefault();
+                          moveBookshelfNav('previous');
+                          break;
+                        case 'ArrowDown':
+                          event.preventDefault();
+                          moveBookshelfNav('next');
+                          break;
+                        case 'ArrowRight':
+                          event.preventDefault();
+                          move('/command/prev');
+                          break;
+                        case 'ArrowLeft':
+                          event.preventDefault();
+                          move('/command/next');
+                          break;
+                        case 'Escape':
+                          if (overlayMenu.classList.contains('open')) {
+                            event.preventDefault();
+                            closeOverlay();
+                          } else if (sheet.classList.contains('open')) {
+                            event.preventDefault();
+                            closeBookshelf();
+                          }
+                          break;
+                      }
+                    });
                     setInterval(refresh, 15000);
                     refresh();
                   </script>
@@ -772,5 +949,7 @@ namespace NeeView
         private record BookshelfItemModel(int Index, string Name, string Path, bool IsDirectory, bool IsCurrent, bool HasThumbnail, bool IsRead);
 
         private record BookshelfOpenResult(bool Ok, bool LoadedBook, bool OpenedFolder);
+
+        private record PageModeResult(bool Ok, string Mode);
     }
 }
