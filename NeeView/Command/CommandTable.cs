@@ -333,6 +333,7 @@ namespace NeeView
                 new OpenSettingFilesFolderCommand(),
                 new OpenScriptsFolderCommand(),
                 new OpenVersionWindowCommand(),
+                new ShowNgrokTunnelQrCodeCommand(),
                 new CloseApplicationCommand(),
 
                 new TogglePermitFileCommand(),

@@ -243,6 +243,8 @@ namespace NeeView
                     new TreeListNode<MenuElement>(new CommandMenuElement() { CommandName = "HelpScript" }),
                     new TreeListNode<MenuElement>(new CommandMenuElement() { CommandName = "HelpSearchOption" }),
                     new TreeListNode<MenuElement>(new SeparatorMenuElement()),
+                    new TreeListNode<MenuElement>(new CommandMenuElement() { CommandName = "ShowNgrokTunnelQrCode" }),
+                    new TreeListNode<MenuElement>(new SeparatorMenuElement()),
                     new TreeListNode<MenuElement>(new CommandMenuElement() { CommandName = "OpenVersionWindow" }),
                 }
             };
