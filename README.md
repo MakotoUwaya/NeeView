@@ -81,3 +81,17 @@ Update the MAJOR version with any feature additions or changes.
 If there are no changes in functionality, such as bug fixes, the MINOR version will be updated.
 
 The BUILD version is automatically assigned the number of commits up to that revision. It is internal and not public.
+
+## Experimental Mobile Web Viewer
+
+This fork includes an experimental mobile web viewer for remote reading workflows.
+
+- NeeView starts a lightweight HTTP image host on port `28228`.
+- The current displayed page is available from a browser as a responsive image view.
+- Mobile browser controls support tap navigation, auto refresh, fullscreen, and a Bookshelf overlay.
+- The Bookshelf overlay supports directory navigation, cached thumbnail display, and opening compressed books or image folders.
+- LAN access is available from devices on the same network by opening `http://<PC IPv4 address>:28228/`.
+- Internet access can be tested with ngrok by forwarding `http://localhost:28228`.
+- The Help menu includes a command to show the current ngrok tunnel URL as a QR code.
+
+The web host is intended as an MVP and currently has no built-in authentication. Avoid exposing it to untrusted networks without an external access control layer or a temporary tunnel URL you can revoke.
