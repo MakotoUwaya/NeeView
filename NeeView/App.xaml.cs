@@ -30,6 +30,7 @@ namespace NeeView
         private readonly int _tickBase = System.Environment.TickCount;
         private CommandLineOption? _option;
         private MultiBootService? _multiBootService;
+        private WebImageHostService? _webImageHostService;
 
 
         /// <summary>
@@ -145,6 +146,10 @@ namespace NeeView
 
             NVInterop.NVFpReset();
             mainWindow.Show();
+
+            _webImageHostService = new WebImageHostService();
+            _webImageHostService.Start();
+            ApplicationDisposer.Current.Add(_webImageHostService);
 
             MessageDialog.IsShowInTaskBar = false;
         }
