@@ -151,6 +151,8 @@ namespace NeeView
             _webImageHostService.Start();
             ApplicationDisposer.Current.Add(_webImageHostService);
 
+            ApplicationDisposer.Current.Add(NgrokTunnelService.Current);
+
             MessageDialog.IsShowInTaskBar = false;
         }
 

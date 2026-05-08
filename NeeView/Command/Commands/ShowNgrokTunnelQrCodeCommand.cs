@@ -25,11 +25,26 @@ namespace NeeView
         {
             try
             {
-                var url = await NgrokTunnelTools.GetPublicUrlAsync(CancellationToken.None);
+                var url = await NgrokTunnelTools.TryGetPublicUrlAsync(CancellationToken.None);
                 if (url is null)
                 {
-                    ShowError("ngrok tunnel URL was not found. Start ngrok with \"ngrok http 28228\" and try again.");
-                    return;
+                    try
+                    {
+                        using var startCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                        await NgrokTunnelService.Current.EnsureRunningAsync(startCts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowError($"Cannot start ngrok automatically: {ex.Message}");
+                        return;
+                    }
+
+                    url = await NgrokTunnelTools.WaitForPublicUrlAsync(TimeSpan.FromSeconds(10));
+                    if (url is null)
+                    {
+                        ShowError("ngrok started but no tunnel was found. Verify the ngrok authtoken and configuration.");
+                        return;
+                    }
                 }
 
                 var image = QrCodeTools.CreateBitmapImage(url);
@@ -64,6 +79,38 @@ namespace NeeView
         {
             Timeout = TimeSpan.FromSeconds(2),
         };
+
+        public static async Task<string?> TryGetPublicUrlAsync(CancellationToken token)
+        {
+            try
+            {
+                return await GetPublicUrlAsync(token);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+            {
+                return null;
+            }
+        }
+
+        public static async Task<string?> WaitForPublicUrlAsync(TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            while (!cts.IsCancellationRequested)
+            {
+                var url = await TryGetPublicUrlAsync(cts.Token);
+                if (url is not null) return url;
+
+                try
+                {
+                    await Task.Delay(300, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+            return null;
+        }
 
         public static async Task<string?> GetPublicUrlAsync(CancellationToken token)
         {
